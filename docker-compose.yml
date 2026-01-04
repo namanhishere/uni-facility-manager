@@ -9,18 +9,18 @@ services:
     container_name: uni_db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: StrongPassword123! # Trong thực tế nên dùng .env
-      POSTGRES_DB: uni_facility_db
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-StrongPassword123!}
+      POSTGRES_DB: ${POSTGRES_DB:-uni_facility_db}
     ports:
-      - "5432:5432" # Expose để quản lý bằng tool ngoài (pgAdmin/DBeaver)
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database:/docker-entrypoint-initdb.d # Tự động chạy script .sql khi khởi tạo
+      - ./database:/docker-entrypoint-initdb.d
     networks:
       - uni-network
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U admin -d uni_facility_db" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-uni_facility_db}" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -36,16 +36,21 @@ services:
     restart: unless-stopped
     depends_on:
       database:
-        condition: service_healthy # Chỉ chạy khi DB healthcheck OK
+        condition: service_healthy
     environment:
-      DATABASE_HOST: database
-      DATABASE_PORT: 5432
-      DATABASE_USER: admin
-      DATABASE_PASSWORD: StrongPassword123!
-      DATABASE_NAME: uni_facility_db
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-StrongPassword123!}
+      DB_NAME: ${POSTGRES_DB:-uni_facility_db}
       PORT: 3500
-      # CORS setup cho Frontend
       ALLOWED_ORIGINS: "http://localhost:3001"
+      # SSO Configuration
+      OAUTH2_TOKEN_URL: ${OAUTH2_TOKEN_URL:-https://devhcmutsso.namanhishere.com/oauth/token}
+      OAUTH2_CLIENT_ID: ${OAUTH2_CLIENT_ID:-client_id}
+      OAUTH2_CLIENT_SECRET: ${OAUTH2_CLIENT_SECRET:-client_secret}
+      OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI:-http://localhost:3001/auth/callback}
+      OAUTH2_PROFILE_URL: ${OAUTH2_PROFILE_URL:-https://devhcmutsso.namanhishere.com/api/profile}
     ports:
       - "3500:3500"
     networks:
@@ -63,10 +68,13 @@ services:
     depends_on:
       - backend
     environment:
-      # Biến môi trường Build-time (Next.js cần NEXT_PUBLIC_)
-      NEXT_PUBLIC_API_URL: http://localhost:3500
+      # Browser -> Host Access
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3500}
+      # Server (SSR) -> Container Access
+      INTERNAL_API_URL: http://backend:3500
+
     ports:
-      - "3001:3000" # Map port 3000 của container ra port 3001 của máy host
+      - "3001:3000"
     networks:
       - uni-network
 

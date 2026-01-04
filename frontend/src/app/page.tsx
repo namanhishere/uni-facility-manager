@@ -17,20 +17,7 @@ import Link from "next/link";
 import { API_URL } from "@/lib/constants";
 
 // Type matching backend Facility entity
-interface Facility {
-  facilityId: number;
-  name: string;
-  location: string;
-  type: string;
-  capacity: number;
-  imageUrl: string | null;
-  status: string;
-  price: number;
-  priceType: 'PER_HOUR' | 'PER_BOOKING' | 'ONE_TIME';
-  transactionType: string;
-  requiresApproval: boolean;
-  managerId: number;
-}
+import { Facility } from "@/types";
 
 export default function Home() {
   const [searchTerm, setSearchTerm] = useState("");

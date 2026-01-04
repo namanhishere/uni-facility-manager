@@ -13,7 +13,7 @@ import { BookingStatus } from './../../common/enums/db-enums';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
-export class BookingsService implements OnModuleInit {
+export class BookingsService {
     constructor(
         @InjectRepository(Booking)
         private bookingsRepository: Repository<Booking>,
@@ -26,45 +26,6 @@ export class BookingsService implements OnModuleInit {
         private dataSource: DataSource,
         private readonly notificationsService: NotificationsService,
     ) { }
-
-    async onModuleInit() {
-        // Schema is now defined in database/init.sql
-        // This is only for backward compatibility with existing databases
-        try {
-            // Add columns if they don't exist (for databases created before schema update)
-            await this.dataSource.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS recurrence_group_id UUID;`);
-            await this.dataSource.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;`);
-            await this.dataSource.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;`);
-            await this.dataSource.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS parent_booking_id INT REFERENCES bookings(booking_id) ON DELETE SET NULL;`);
-
-            // Master-Detail Pattern for Recurring
-            await this.dataSource.query(`
-                CREATE TABLE IF NOT EXISTS booking_groups (
-                    group_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                    user_id INT REFERENCES users(user_id) ON DELETE CASCADE,
-                    facility_id INT REFERENCES facilities(facility_id),
-                    recurrence_pattern VARCHAR(100),
-                    total_amount DECIMAL(15, 2) DEFAULT 0,
-                    status VARCHAR(20) DEFAULT 'PENDING',
-                    created_at TIMESTAMPTZ DEFAULT NOW()
-                );
-            `);
-            await this.dataSource.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS group_id INT REFERENCES booking_groups(group_id) ON DELETE SET NULL;`);
-            await this.dataSource.query(`ALTER TABLE facilities ADD COLUMN IF NOT EXISTS min_cancellation_hours INT DEFAULT 1;`);
-
-            // Add enum values if they don't exist (for databases created before schema update)
-            const enumValues = ['RESCHEDULED', 'CONFIRMED', 'IN_USE', 'ADMIN_HOLD', 'REVIEW_REQUIRED', 'WAITING_PAYMENT', 'PENDING_RESCHEDULE'];
-            for (const val of enumValues) {
-                try {
-                    await this.dataSource.query(`ALTER TYPE booking_status ADD VALUE IF NOT EXISTS '${val}';`);
-                } catch (e) {
-                    // Ignore if already exists
-                }
-            }
-        } catch (error) {
-            console.error("Failed to update database schema:", error);
-        }
-    }
 
     private getSlotTime(date: string, slot: number): { start: Date; end: Date } {
         const startHour = 7 + (slot - 1);
@@ -322,7 +283,7 @@ export class BookingsService implements OnModuleInit {
 
             // Handle equipment if any
             if (equipment_items && equipment_items.length > 0) {
-                const BookingDetail = (await import('./entities/booking-detail.entity')).BookingDetail;
+                // BookingDetail is already imported
                 const details = equipment_items.map(item => {
                     const det = new BookingDetail();
                     det.bookingId = savedBooking.bookingId;
