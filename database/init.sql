@@ -64,6 +64,17 @@ CREATE TABLE equipments (
     rental_price DECIMAL(15, 2) DEFAULT 0 CHECK (rental_price >= 0)
 );
 
+-- Table: Booking Groups (Master for Recurring Bookings)
+CREATE TABLE booking_groups (
+    group_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id INT REFERENCES users(user_id) ON DELETE CASCADE,
+    facility_id INT REFERENCES facilities(facility_id),
+    recurrence_pattern VARCHAR(100),
+    total_amount DECIMAL(15, 2) DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'PENDING',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Table: Booking
 CREATE TABLE bookings (
     booking_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -79,6 +90,7 @@ CREATE TABLE bookings (
     cancelled_at TIMESTAMPTZ,
     recurrence_group_id UUID,
     parent_booking_id INT REFERENCES bookings(booking_id) ON DELETE SET NULL, -- For reschedule requests (fork)
+    group_id INT REFERENCES booking_groups(group_id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     
     CONSTRAINT chk_time_valid CHECK (check_out_time > check_in_time),
@@ -228,36 +240,73 @@ AFTER INSERT OR UPDATE OR DELETE ON booking_details
 FOR EACH ROW
 EXECUTE FUNCTION calculate_total_amount();
 
--- 6. SEED DATA (Dữ liệu mẫu chuyên nghiệp)
+-- 6. SEED DATA (Rich Dataset)
 
 -- Seed Users
 INSERT INTO users (sso_id, full_name, email, role, department) VALUES
 ('20110456', 'Nguyen Van Sinh Vien', 'student@university.edu.vn', 'STUDENT', 'Computer Science'),
+('20101234', 'Tran Thi Hanh', 'hanh.tran@university.edu.vn', 'STUDENT', 'Business Administration'),
+('20109999', 'Le Van Long', 'long.le@university.edu.vn', 'STUDENT', 'Electrical Engineering'),
 ('T00123', 'Dr. Le Thi Giang Vien', 'lecturer@university.edu.vn', 'LECTURER', 'Software Engineering'),
+('T00987', 'Prof. John Smith', 'john.smith@university.edu.vn', 'LECTURER', 'International Relations'),
 ('ADM001', 'Tran Quan Ly', 'admin@university.edu.vn', 'ADMIN', 'Facility Department'),
 ('MANAGER001', 'Pham Van Quan Ly CSVC', 'manager@university.edu.vn', 'FACILITY_MANAGER', 'Facility Operation');
 
--- Seed Facilities (with price and price_type)
-INSERT INTO facilities (name, location, type, capacity, price, price_type, manager_id) VALUES
-('Hall A1', 'Block A, Floor 1', 'HALL', 200, 500000, 'PER_HOUR', 3),       -- Per hour pricing
-('Lab Network', 'Block B, Floor 3', 'LAB', 40, 200000, 'PER_BOOKING', 4),  -- Fixed price per booking
-('Room C202', 'Block C, Floor 2', 'CLASSROOM', 60, 100000, 'PER_HOUR', 3), -- Per hour pricing
-('Soccer Field', 'Sports Zone', 'OUTDOOR', 22, 0, 'ONE_TIME', 4);          -- Free facility!
+-- Seed Facilities (with real Unsplash Images & Diverse Pricing)
+INSERT INTO facilities (name, location, type, capacity, image_url, price, price_type, min_cancellation_hours, manager_id) VALUES
+('Grand Hall A1', 'Block A, Floor 1', 'HALL', 500, 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=800&q=80', 500000, 'PER_HOUR', 24, 3),
+('Interactive Classroom C202', 'Block C, Floor 2', 'CLASSROOM', 60, 'https://images.unsplash.com/photo-1580582932707-520aed937b7b?w=800&q=80', 100000, 'PER_HOUR', 2, 3),
+('AI Research Lab', 'Block B, Floor 3', 'LAB', 40, 'https://images.unsplash.com/photo-1596495578065-6e0763fa1178?w=800&q=80', 2000000, 'PER_BOOKING', 12, 4),
+('Main Soccer Field', 'Sports Complex Zone', 'OUTDOOR', 22, 'https://images.unsplash.com/photo-1626245652674-8d49f697412e?w=800&q=80', 0, 'ONE_TIME', 1, 4),
+('Conference Room B1', 'Block B, Floor 1', 'HALL', 50, 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80', 300000, 'PER_HOUR', 5, 3),
+('Physics Lab 101', 'Block C, Floor 1', 'LAB', 30, 'https://images.unsplash.com/photo-1564325724739-bae0bd08762c?w=800&q=80', 150000, 'PER_HOUR', 3, 4),
+('Outdoor Tennis Court', 'Sports Complex Zone', 'OUTDOOR', 4, 'https://images.unsplash.com/photo-1622279457406-8134469f6e3d?w=800&q=80', 50000, 'PER_HOUR', 2, 4);
 
 -- Seed Equipments
 INSERT INTO equipments (facility_id, name, total_quantity, available_quantity, rental_price) VALUES
-(1, 'Projector Sony 4K', 2, 2, 50000),   -- Cố định tại Hall A1, 50k/cái
-(NULL, 'Portable Speaker JBL', 5, 5, 30000), -- Kho lưu động, 30k/cái
-(2, 'Cisco Router Kit', 20, 20, 0);          -- Tại Lab Network, miễn phí
+(1, 'Projector Sony 4K', 4, 4, 100000),       -- At Grand Hall A1
+(1, 'Wireless Mic Set', 10, 10, 50000),        -- At Grand Hall A1
+(NULL, 'Portable JBL Speaking', 10, 10, 30000), -- Floating stock
+(NULL, 'Whiteboard Marker Set', 50, 50, 5000),  -- Floating stock
+(3, 'High-Performance GPU Server', 10, 10, 0),  -- Free for AI Lab
+(6, 'Oscilloscope', 15, 15, 0),                 -- Free for Physics Lab
+(NULL, 'Extension Cord (10m)', 20, 20, 10000);
 
--- Seed Booking (Kịch bản: Book Hall A1 trong 2 tiếng + mượn thêm 2 loa)
--- Bước 1: Insert Booking Header
-INSERT INTO bookings (user_id, facility_id, purpose, booking_type, check_in_time, check_out_time) 
-VALUES (1, 1, 'Club Meeting', 'EVENT', NOW() + INTERVAL '1 day', NOW() + INTERVAL '1 day 2 hours');
--- Lúc này Trigger `trg_update_total_on_booking_change` chạy, Total = 500k * 2h = 1,000,000
+-- Seed Bookings
 
--- Bước 2: Insert Booking Detail (Mượn 2 loa)
-INSERT INTO booking_details (booking_id, equipment_id, quantity) VALUES
-(1, 2, 2); 
--- Trigger `trg_update_total_on_detail_change` chạy: 
--- Total cũ (1tr) + (2 loa * 30k) = 1,060,000 VND
+-- 1. Completed Past Booking (Student 1)
+INSERT INTO bookings (user_id, facility_id, purpose, booking_type, status, check_in_time, check_out_time, total_amount) 
+VALUES (1, 2, $$Group Study Session$$, 'PERSONAL', 'COMPLETED', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days' + INTERVAL '2 hours', 200000);
+
+-- 2. Confirmed Future Booking (Lecturer)
+INSERT INTO bookings (user_id, facility_id, purpose, booking_type, status, check_in_time, check_out_time) 
+VALUES (4, 1, $$Guest Lecture Series$$, 'ACADEMIC', 'CONFIRMED', NOW() + INTERVAL '2 days' + INTERVAL '9 hours', NOW() + INTERVAL '2 days' + INTERVAL '12 hours');
+
+-- 3. Pending Booking (Student 2 needs approval)
+INSERT INTO bookings (user_id, facility_id, purpose, booking_type, status, check_in_time, check_out_time) 
+VALUES (2, 5, $$Student Union Meeting$$, 'EVENT', 'PENDING', NOW() + INTERVAL '3 days' + INTERVAL '14 hours', NOW() + INTERVAL '3 days' + INTERVAL '16 hours');
+
+-- 4. Waiting Payment Booking (Student 1)
+INSERT INTO bookings (user_id, facility_id, purpose, booking_type, status, check_in_time, check_out_time) 
+VALUES (1, 7, $$Tennis Match with friends$$, 'PERSONAL', 'WAITING_PAYMENT', NOW() + INTERVAL '1 day' + INTERVAL '17 hours', NOW() + INTERVAL '1 day' + INTERVAL '19 hours');
+-- Add equipment to this one
+INSERT INTO booking_details (booking_id, equipment_id, quantity) VALUES ((SELECT booking_id FROM bookings WHERE status='WAITING_PAYMENT' LIMIT 1), 3, 1);
+
+-- 5. Rejected Booking (Student 3)
+INSERT INTO bookings (user_id, facility_id, purpose, booking_type, status, check_in_time, check_out_time, cancellation_reason, cancelled_at) 
+VALUES (3, 3, $$Gaming Night$$, 'PERSONAL', 'REJECTED', NOW() + INTERVAL '1 week', NOW() + INTERVAL '1 week' + INTERVAL '4 hours', $$Lab is for academic purposes only.$$, NOW());
+
+-- 6. Recurring Bookings Pattern (Weekly Meeting for 1 month)
+-- Group Header
+INSERT INTO booking_groups (user_id, facility_id, recurrence_pattern, status, total_amount)
+VALUES (5, 5, 'WEEKLY', 'CONFIRMED', 0);
+
+-- Individual Bookings linked to group
+INSERT INTO bookings (user_id, facility_id, purpose, booking_type, status, check_in_time, check_out_time, group_id) 
+VALUES 
+(5, 5, $$Weekly Department Meeting (Week 1)$$, 'EVENT', 'CONFIRMED', NOW() + INTERVAL '7 days' + INTERVAL '8 hours', NOW() + INTERVAL '7 days' + INTERVAL '10 hours', (SELECT max(group_id) FROM booking_groups)),
+(5, 5, $$Weekly Department Meeting (Week 2)$$, 'EVENT', 'CONFIRMED', NOW() + INTERVAL '14 days' + INTERVAL '8 hours', NOW() + INTERVAL '14 days' + INTERVAL '10 hours', (SELECT max(group_id) FROM booking_groups)),
+(5, 5, $$Weekly Department Meeting (Week 3)$$, 'EVENT', 'CONFIRMED', NOW() + INTERVAL '21 days' + INTERVAL '8 hours', NOW() + INTERVAL '21 days' + INTERVAL '10 hours', (SELECT max(group_id) FROM booking_groups));
+
+-- Update Group Total (approximate logic for seed, in app trigger handles individual updates)
+UPDATE booking_groups SET total_amount = (SELECT SUM(total_amount) FROM bookings WHERE group_id = (SELECT max(group_id) FROM booking_groups)) WHERE group_id = (SELECT max(group_id) FROM booking_groups);
